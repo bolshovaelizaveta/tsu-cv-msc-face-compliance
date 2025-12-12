@@ -28,55 +28,54 @@
 
 ### 2.1. Диаграмма прецедентов
 Кто и как взаимодействует с системой.
-
 ```mermaid
-usecaseDiagram
-    actor "Пользователь (User)" as User
-    actor "Веб-портал РГБ (Client App)" as WebApp
-    
-    package "Face Compliance System" {
-        usecase "Загрузка фото" as UC1
-        usecase "Валидация лица" as UC2
-        usecase "Получение отчета об ошибках" as UC3
-    }
+graph LR
+    User((Пользователь))
+    WebApp[Веб-портал РГБ]
 
-    User --> WebApp : Загружает файл
-    WebApp --> UC1 : Передает изображение (API)
-    UC1 ..> UC2 : <<include>>
-    UC2 --> UC3 : Генерирует JSON ответ
-    UC3 --> WebApp : Возвращает статус
-    WebApp --> User : Показывает: "Фото принято" или "Ошибка: Очки"
+    subgraph "Face Compliance System"
+        UC1(Загрузка фото)
+        UC2(Валидация лица)
+        UC3(Получение отчета)
+    end
+
+    User -- Загружает файл --> WebApp
+    WebApp -- Передает фото --> UC1
+    UC1 -. include .-> UC2
+    UC2 -- JSON --> UC3
+    UC3 -- Статус --> WebApp
+    WebApp -- Вердикт --> User
 ```
 
 ### 2.2. Диаграмма компонентов
 Внутреннее устройство пайплайна обработки.
 
 ```mermaid
-componentDiagram
-    package "Client Side" {
-        [Web Interface] 
-    }
+graph TD
+    subgraph "Client Side"
+        Web[Web Interface]
+    end
     
-    package "Server Side (Docker Container)" {
-        [API Gateway (FastAPI)] as API
-        [Image Preprocessor (OpenCV)] as PRE
+    subgraph "Server Side (Docker Container)"
+        API[API Gateway / FastAPI]
+        PRE[Image Preprocessor / OpenCV]
         
-        package "Model Pipeline" {
-            [Face Detector (MediaPipe)] as DET
-            [Landmark Analyzer] as GEO
-            [Quality Classifier (ONNX)] as QUAL
-        }
+        subgraph "Model Pipeline"
+            DET[Face Detector / MediaPipe]
+            GEO[Landmark Analyzer]
+            QUAL[Quality Classifier / ONNX]
+        end
         
-        [Result Formatter] as RES
-    }
+        RES[Result Formatter]
+    end
 
-    [Web Interface] --> API : POST /validate
-    API --> PRE : Raw Bytes
-    PRE --> DET : Normalized Image
-    DET --> GEO : Landmarks (468 pts)
-    GEO --> QUAL : Cropped Face
-    QUAL --> RES : Scores
-    RES --> API : JSON Response
+    Web -- POST /validate --> API
+    API -- Raw Bytes --> PRE
+    PRE -- Normalized Img --> DET
+    DET -- Landmarks --> GEO
+    GEO -- Cropped Face --> QUAL
+    QUAL -- Scores --> RES
+    RES -- JSON Response --> API
 ```
 
 ---
@@ -113,26 +112,29 @@ componentDiagram
 Схема развертывания в инфраструктуре заказчика (CPU).
 
 ```mermaid
-graph LR
-    subgraph "Client Zone"
-        User(Browser / Mobile)
+graph TD
+    %% Nodes
+    User((Пользователь<br/>Web/Mobile))
+    
+    subgraph "DMZ (Внешняя сеть)"
+        LB{Load Balancer<br/>Nginx}
     end
-
-    subgraph "Library Infrastructure"
-        LB[Load Balancer]
+    
+    subgraph "Secure Zone (Сервер РГБ)"
+        Host[Сервер CPU]
         
-        subgraph "Application Server (CPU)"
-            Docker[Docker Container]
+        subgraph "Docker Environment"
             API[FastAPI Service]
-            Models[(ONNX Runtime)]
+            Engine[(ONNX Runtime)]
         end
     end
 
-    User -- HTTPS Upload --> LB
-    LB -- Proxy --> Docker
-    Docker -- Run --> API
-    API -- Load --> Models
-
+    %% Связи (Edges)
+    User -- "1. HTTPS POST (Image)" --> LB
+    LB -- "2. Reverse Proxy" --> API
+    Host -.-> API
+    API -- "3. Inference" --> Engine
+```
 ---
 
 ## 4. Этические и технические меры 
