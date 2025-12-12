@@ -49,7 +49,6 @@ profile_default/
 ipython_config.py
 
 # Computer Vision & Data 
-data/
 dataset/
 datasets/
 images/
