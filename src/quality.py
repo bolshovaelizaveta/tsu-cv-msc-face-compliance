@@ -170,3 +170,19 @@ class FaceQualityController:
             final_score = norm * 20.0
             
         return float(final_score)
+    
+# Проверка базовых параметров освещенности
+def check_photometry(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    brightness = gray.mean()
+    
+    # Свет
+    if brightness < 40: return False, "TOO_DARK"
+    if brightness > 250: return False, "TOO_BRIGHT"
+
+    # Резкость
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    if laplacian_var < 110: 
+        return False, "BLURRY"
+    
+    return True, "OK"

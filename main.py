@@ -9,13 +9,13 @@ import PIL.Image
 import PIL.ImageOps
 
 from src.geometry import FaceGeometryController
-from src.quality import FaceQualityController
+from src.quality import FaceQualityController, check_photometry
 from src.config import ICAOThresholds
 
 app = FastAPI(
     title="TSU Face Compliance API",
     description="Сервис автоматической проверки фотографий по стандартам ICAO 9303 (ВКР Большова Е.А.)",
-    version="0.1.0"
+    version="1.0.0"
 )
 
 # Разрешаем запросы с любых фронтендов
@@ -75,28 +75,43 @@ async def validate_photo(file: UploadFile = File(...)):
     
     if img is None:
         raise HTTPException(400, "Не удалось декодировать изображение или прочитать метаданные")
-
-    # Геометрия
-    angles, landmarks = geo_processor.get_head_pose(img)
     
+    # Формируем ответ
     result = {
         "filename": file.filename,
         "is_compliant": False,
         "errors": [],
-        "metrics": {},
+        "metrics": {
+            "yaw": 0.0, "pitch": 0.0, "roll": 0.0, 
+            "ear": 0.0, "quality_score": 0.0
+        },
         "latency_ms": 0
     }
 
-    if not angles:
-        result["errors"].append("Лицо не обнаружено")
+    # Проверка освещения
+    photo_ok, photo_msg = check_photometry(img)
+    if not photo_ok:
+        result["errors"].append(f"Ошибка освещения: {photo_msg}")
+        result["latency_ms"] = int((time.time() - start_time) * 1000)
+        return result
+    
+    # Геометрия
+    geo_result = geo_processor.analyze(img)
+
+    if geo_result.get("error"):
+        result["errors"].append(geo_result["error"]) # NO_FACE, MULTIPLE_FACES
         result["latency_ms"] = int((time.time() - start_time) * 1000)
         return result
 
-    # Проверка геометрии
-    # Используем safe_float для защиты от бесконечности
+    # Если геометрия найдена
+    angles = geo_result["angles"]
+    ear = geo_result["ear"]
+    landmarks = geo_result["landmarks"]
+    
     yaw = safe_float(angles['yaw'])
     pitch = safe_float(angles['pitch'])
     roll = safe_float(angles['roll'])
+    ear = safe_float(ear)
 
     geo_ok = True
     if abs(yaw) > ICAOThresholds.YAW_MAX:
@@ -105,18 +120,24 @@ async def validate_photo(file: UploadFile = File(...)):
     if abs(pitch) > ICAOThresholds.PITCH_MAX:
         result["errors"].append(f"Недопустимый наклон головы (Pitch): {pitch}°")
         geo_ok = False
+    if ear < 0.15: 
+        result["errors"].append("Глаза закрыты")
+        geo_ok = False
     if abs(roll) > ICAOThresholds.ROLL_MAX:
         result["errors"].append(f"Недопустимый наклон к плечу (Roll): {roll}°")
         geo_ok = False
 
     # Качество
-    raw_quality = quality_processor.get_quality_score(img, landmarks)
-    quality_score = safe_float(raw_quality)
-    
+    quality_score = 0.0
     quality_ok = True
-    if quality_score < ICAOThresholds.MIN_QUALITY_SCORE:
-        result["errors"].append(f"Низкое качество изображения (Score: {quality_score} < {ICAOThresholds.MIN_QUALITY_SCORE})")
-        quality_ok = False
+    
+    if geo_ok:
+        raw_quality = quality_processor.get_quality_score(img, landmarks)
+        quality_score = safe_float(raw_quality)
+        
+        if quality_score < ICAOThresholds.MIN_QUALITY_SCORE:
+            result["errors"].append(f"Низкое качество (Score: {quality_score})")
+            quality_ok = False
 
     # Итог
     result["is_compliant"] = geo_ok and quality_ok
@@ -124,9 +145,9 @@ async def validate_photo(file: UploadFile = File(...)):
         "yaw": yaw,
         "pitch": pitch,
         "roll": roll,
+        "ear": ear,
         "quality_score": quality_score
     }
-    
     result["latency_ms"] = int((time.time() - start_time) * 1000)
-    
+
     return result
