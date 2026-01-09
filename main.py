@@ -8,6 +8,7 @@ import io
 import PIL.Image
 import PIL.ImageOps
 
+from fastapi.responses import FileResponse
 from src.geometry import FaceGeometryController
 from src.quality import FaceQualityController, check_photometry
 from src.config import ICAOThresholds
@@ -151,3 +152,45 @@ async def validate_photo(file: UploadFile = File(...)):
     result["latency_ms"] = int((time.time() - start_time) * 1000)
 
     return result
+
+@app.get("/")
+async def read_index():
+    return FileResponse('static/index.html')
+
+@app.post("/analyze_live")
+async def analyze_live(file: UploadFile = File(...)):
+    """
+    Облегченный метод для живых подсказок в самом интерфейсе.
+    Не запускает MagFace для экономии ресурсов.
+    """
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    if img is None:
+        return {"hints": []}
+
+    hints = []
+    
+    # Проверка света и резкости
+    photo_ok, photo_msg = check_photometry(img)
+    if not photo_ok:
+        if photo_msg == "TOO_DARK": hints.append("Слишком темно, включите свет")
+        if photo_msg == "BLURRY": hints.append("Изображение размыто, протрите камеру")
+        if photo_msg == "LOW_CONTRAST": hints.append("Низкий контраст")
+
+    # Геометрия
+    geo_result = geo_processor.analyze(img)
+    if geo_result.get("error"):
+        if geo_result["error"] == "NO_FACE": hints.append("Лицо не обнаружено")
+        if geo_result["error"] == "MULTIPLE_FACES": hints.append("В кадре должно быть только один человек")
+    else:
+        angles = geo_result["angles"]
+        ear = geo_result["ear"]
+        
+        if abs(angles['yaw']) > ICAOThresholds.YAW_MAX: hints.append("Поверните голову прямо")
+        if angles['pitch'] > ICAOThresholds.PITCH_MAX: hints.append("Опустите голову чуть ниже")
+        if angles['pitch'] < -ICAOThresholds.PITCH_MAX: hints.append("Поднимите голову чуть выше")
+        if ear < 0.15: hints.append("Не закрывайте глаза")
+
+    return {"hints": hints}

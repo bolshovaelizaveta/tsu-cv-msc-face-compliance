@@ -1,0 +1,9 @@
+venv/
+data/benchmark/
+data/rejected_by_cleaner/
+research/
+docs/
+.git/
+__pycache__/
+*.png
+*.csv

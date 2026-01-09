@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>РГБ: Валидация Биометрии</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background: #eef2f7; color: #333; margin: 0; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 800px; margin-bottom: 20px; }
+        h1 { color: #1a3a5f; margin-bottom: 10px; font-size: 26px; text-align: center; }
+        .section-title { font-weight: bold; margin-bottom: 15px; display: block; border-bottom: 2px solid #eee; padding-bottom: 5px; color: #555; }
+        
+        /* Сетка для камеры и подсказок */
+        .live-container { display: flex; gap: 20px; margin-bottom: 15px; align-items: flex-start; }
+        .video-wrapper { flex: 2; position: relative; }
+        video { width: 100%; border-radius: 8px; background: #000; display: block; transform: scaleX(-1); } 
+        
+        .hints-panel { flex: 1; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; min-height: 200px; }
+        .hint-item { margin-bottom: 10px; font-size: 14px; line-height: 1.4; padding-left: 20px; position: relative; font-weight: 600; }
+        .hint-item::before { content: "•"; position: absolute; left: 0; color: #dc3545; font-size: 20px; }
+        .hint-ok { color: #28a745; }
+        .hint-warn { color: #dc3545; }
+
+        .controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+        button, label.upload-btn { padding: 12px 24px; font-size: 14px; cursor: pointer; background: #0056b3; color: white; border: none; border-radius: 6px; transition: 0.3s; text-decoration: none; display: inline-block; font-weight: bold; }
+        button:hover, label.upload-btn:hover { background: #004494; transform: translateY(-1px); }
+        
+        #result { margin-top: 20px; padding: 20px; border-radius: 8px; display: none; line-height: 1.6; }
+        .success { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .error { background: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: none; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Система регистрации читателей РГБ</h1>
+
+    <div class="card">
+        <span class="section-title">Вариант 1: Использовать Веб-камеру</span>
+        <div class="live-container">
+            <div class="video-wrapper">
+                <video id="video" autoplay muted playsinline></video>
+            </div>
+            <div class="hints-panel">
+                <div style="font-size: 12px; color: #888; margin-bottom: 10px; text-transform: uppercase;">Помощник позиционирования:</div>
+                <div id="live-hints">Загрузка камеры...</div>
+            </div>
+        </div>
+        <div class="controls">
+            <button id="snap">Сфотографировать и проверить</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <span class="section-title">Вариант 2: Загрузить готовое фото</span>
+        <div class="controls">
+            <label class="upload-btn">
+                Выбрать файл на диске
+                <input type="file" id="fileInput" accept="image/*">
+            </label>
+        </div>
+    </div>
+
+    <div id="loader" class="loader"></div>
+    <div id="result" class="card"></div>
+
+    <script>
+        const video = document.getElementById('video');
+        const snap = document.getElementById('snap');
+        const fileInput = document.getElementById('fileInput');
+        const resultDiv = document.getElementById('result');
+        const loader = document.getElementById('loader');
+        const hintsDiv = document.getElementById('live-hints');
+
+        // Запуск камеры
+        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+            .then(stream => { 
+                video.srcObject = stream;
+                // Запускаем цикл подсказок каждые 500мс
+                setInterval(updateLiveHints, 500);
+            })
+            .catch(err => { 
+                hintsDiv.innerHTML = "<span class='hint-warn'>Ошибка: Камера не найдена</span>";
+                console.error("Ошибка камеры:", err); 
+            });
+
+        // Цикл живых подсказок 
+        async function updateLiveHints() {
+            if (video.paused || video.ended) return;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 160; 
+            canvas.height = 120;
+            const ctx = canvas.getContext('2d');
+            // Зеркалим кадр для анализа, так как видео зеркальное
+            ctx.translate(160, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, 160, 120);
+            
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'live.jpg');
+
+                try {
+                    const response = await fetch('/analyze_live', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    
+                    if (data.hints && data.hints.length > 0) {
+                        hintsDiv.innerHTML = data.hints.map(h => `<div class="hint-item hint-warn">${h}</div>`).join("");
+                    } else {
+                        hintsDiv.innerHTML = "<div class='hint-item hint-ok' style='border: 1px solid #28a745; padding: 5px; border-radius: 4px;'>Идеальная позиция. Снимайте!</div>";
+                    }
+                } catch (e) { /* Игнорируем ошибки сети в живом потоке */ }
+            }, 'image/jpeg', 0.4);
+        }
+
+        // Основная валидация 
+        async function sendToServer(blob) {
+            const formData = new FormData();
+            formData.append('file', blob, 'final.jpg');
+
+            resultDiv.style.display = 'none';
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch('/validate', { method: 'POST', body: formData });
+                const data = await response.json();
+                
+                resultDiv.style.display = 'block';
+                loader.style.display = 'none';
+
+                if (data.is_compliant) {
+                    resultDiv.className = "card success";
+                    resultDiv.innerHTML = `<strong>Добавление фотографии успешно</strong><br>
+                                           • Биометрическое качество: ${data.metrics.quality_score}<br>
+                                           • Ракурс: Yaw ${data.metrics.yaw}°, Pitch ${data.metrics.pitch}°<br>
+                                           • Статус: Соответствует ICAO 9303`;
+                } else {
+                    resultDiv.className = "card error";
+                    resultDiv.innerHTML = `<strong>ОТКЛОНЕНО</strong><br>Необходимо исправить:<br> • ` + data.errors.join("<br> • ");
+                }
+                // Прокрутка к результату
+                resultDiv.scrollIntoView({ behavior: 'smooth' });
+            } catch (e) {
+                loader.style.display = 'none';
+                resultDiv.style.display = 'block';
+                resultDiv.className = "card error";
+                resultDiv.innerText = "Ошибка связи с сервером. Проверьте работу Docker-контейнера.";
+            }
+        }
+
+        // Кнопка снимка
+        snap.addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob(sendToServer, 'image/jpeg', 0.95);
+        });
+
+        // Загрузка файла
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) sendToServer(file);
+        });
+    </script>
+</body>
+</html>
