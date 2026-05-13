@@ -1,10 +1,12 @@
 # Computer Vision 
-opencv-python-headless==4.10.0.84
+opencv-contrib-python-headless==4.10.0.84
 mediapipe==0.10.14
 numpy==1.26.4
 torch==2.6.0
 torchvision==0.21.0
 Pillow==10.2.0
+ultralytics==8.4.47  # Добавлено для YOLOv8/v11
+onnxruntime==1.23.2 # Добавлено для MODNet 
 
 # Web Framework 
 fastapi==0.109.0
@@ -16,6 +18,3 @@ tqdm==4.67.3
 pandas==3.0.0
 seaborn==0.13.2
 scikit_learn==1.8.0
-
-# Optional 
-onnxruntime==1.17.1
