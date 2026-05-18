@@ -49,7 +49,7 @@ profile_default/
 ipython_config.py
 
 # Computer Vision & Data 
-data/benchmark/
+data/
 dataset/
 datasets/
 images/

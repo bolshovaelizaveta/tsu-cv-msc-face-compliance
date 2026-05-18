@@ -18,7 +18,7 @@
 *   **Backend:** FastAPI (Python 3.12).
 *   **Детекция и Сегментация:** YOLOv8-Face, MODNet (ONNX), MediaPipe.
 *   **Оценка качества (FIQA):** MagFace (iResNet50).
-*   **Инференс:** Оптимизирован для исполнения на **CPU** (архитектуры x86_64 и ARM64).
+*   **Инференс:** Оптимизирован для исполнения на **CPU**.
 
 ## Установка и запуск (Docker)
 
@@ -33,6 +33,7 @@
 2. **Подготовка моделей:**
     Разместите следующие файлы в директории `models/`:
     - `yolov8n-face.pt` (Детектор лиц)
+    - `yolov8m-occlusion.pt` (Классификатор окклюзий)
     - `modnet_photographic_portrait_matting.onnx` (Матирование фона)
     - `magface_iresnet50_MS1MV2.pth` (Оценка качества)
     - `selfie_multiclass.tflite` (Сегментатор MediaPipe)
@@ -63,7 +64,7 @@
 
 ---
 
-## Тестирование и результаты
+## Тестирование и результаты (старые результаты!)
 
 Для глубокой оценки эффективности системы было проведено тестирование на репрезентативном наборе данных объемом **14 232 изображения** (на базе датасетов FFHQ и синтетических деградаций).
 
@@ -86,6 +87,7 @@ tsu-cv-msc-face-compliance/
 │   └── quality.py      # FIQA (MagFace) и технические фильтры
 │   └── detector_v2.py  # Локализация и кроп (YOLO)
 │   └── segmentation_v2.py # Удаление фона (MODNet)
+│   └── occlusion.py    # Контроллер для проверки перекрытий лица (маски, очки)
 ├── research/           # Инструменты анализа и бенчмарки
 │   ├── benchmark_engine.py  # Движок тестирования на 14к фото
 │   ├── dataset_generator.py # Генератор синтетических дефектов
@@ -93,9 +95,13 @@ tsu-cv-msc-face-compliance/
 │   └── thesis_plots.py      # Генератор графиков 
 │   └── test_modnet.py      
 │   └── final_demo.py        # Итоговый скрипт визуализации
+│   └── plot_confusion.py
+│   └── visual_inspector.py
 ├── scripts/            # Сценарии демонстрации и проверки
 │   ├── test_pipeline.py     # Демо-режим веб-камеры (CLI)
 │   └── test_metrics.py      # Быстрая проверка метрик на 10 примерах
+│   └── train_classifier.py
+│   └── debug_model.py
 ├── data/               # Наборы данных
 │   └── test_samples/   # 10 контрольных снимков для тестов API
 ├── static/             # Web UI: Интерфейс регистрации в браузере

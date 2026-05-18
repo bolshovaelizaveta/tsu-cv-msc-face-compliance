@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import os
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 @dataclass
 class ICAOThresholds:
     # Сбалансированные пороги для читательского билета
