@@ -1,29 +1,30 @@
 FROM python:3.12-slim
 
-# Системные зависимости для OpenCV и MediaPipe
+# 1. Установка системных зависимостей для OpenCV и MediaPipe
 RUN apt-get update && apt-get install -y \
-    libgl1 \
+    libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# 2. Установка рабочей директории
 WORKDIR /app
 
-# Установка зависимостей 
+# 3. Копируем и устанавливаем зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Исходный код 
+# 4. Копируем исходный код
 COPY src/ ./src/
-COPY models/ ./models/
 COPY static/ ./static/
 COPY main.py .
 
-# Порт для FastAPI
-EXPOSE 8000
+# 5. Создаем пустую папку для моделей
+RUN mkdir -p models
 
-# Команда для запуска 
+# 6. Настройки порта и переменных окружения
+EXPOSE 8000
+ENV PYTHONUNBUFFERED=1
+
+# 7. Запуск сервера
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

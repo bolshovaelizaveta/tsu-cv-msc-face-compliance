@@ -20,7 +20,7 @@ from src.occlusion import FaceOcclusionController, check_glare
 app = FastAPI(
     title="TSU Face Compliance API",
     description="Проверка корректности фотографии лица по стандартам ICAO 9303 (ВКР Большова Е.А.)",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -78,7 +78,7 @@ async def validate_photo(file: UploadFile = File(...)):
     
     if img is None:
         raise HTTPException(400, "Не удалось декодировать изображение")
-    
+
     result = {
         "filename": file.filename,
         "is_compliant": False,
@@ -87,6 +87,26 @@ async def validate_photo(file: UploadFile = File(...)):
         "latency_ms": 0,
         "processed_image_base64": None
     }
+    
+    # 0. Проверка минимального разрешения 
+    h, w = img.shape[:2]
+    min_side = min(h, w)
+    max_side = max(h, w)
+
+    # Технический минимум 
+    if min_side < 300:
+        result["errors"].append(f"Изображение слишком маленькое ({w}x{h}). Минимум 300px.")
+        result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
+        return result
+
+    # 2. Апскейл до требований заказчика (640x480)
+    if min_side < 480 or max_side < 640:
+        scale_w = 640 / w
+        scale_h = 480 / h
+        scale = max(scale_w, scale_h)
+        
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
+        print(f"DEBUG: Выполнен адаптивный апскейл с {w}x{h} до {img.shape[1]}x{img.shape[0]}")
 
     # Этап 1: Фотометрия
     photo_ok, photo_msg = check_photometry(img)
@@ -112,10 +132,7 @@ async def validate_photo(file: UploadFile = File(...)):
         return result
 
     angles = geo_result["angles"]
-    ear = geo_result["ear"]
-    mar = geo_result["mar"]
-    landmarks = geo_result["landmarks"]
-
+    ear, mar, landmarks = geo_result["ear"], geo_result["mar"], geo_result["landmarks"]
     yaw, pitch, roll = safe_float(angles['yaw']), safe_float(angles['pitch']), safe_float(angles['roll'])
 
     if abs(yaw) > ICAOThresholds.YAW_MAX: result["errors"].append(f"Поворот головы (Yaw): {yaw}°")
@@ -131,9 +148,12 @@ async def validate_photo(file: UploadFile = File(...)):
     # Этап 4: Классификация окклюзий (YOLO-cls) 
     occ_result = occlusion_processor.analyze(tight_crop)
     occ_class = occ_result['class']
+    occ_confidence = safe_float(occ_result.get('confidence', 1.0))
 
     if occ_class == "occluded":
         result["errors"].append("Обнаружены перекрытия лица")
+    elif occ_class == "headwear":
+        result["errors"].append("Обнаружен головной убор. Если это религиозный атрибут, требуется ручная проверка.")
     elif occ_class == "clear_glasses":
         if check_glare(tight_crop, landmarks):
             result["errors"].append("Обнаружены сильные блики на очках")
@@ -158,7 +178,8 @@ async def validate_photo(file: UploadFile = File(...)):
     result["metrics"] = {
         "yaw": yaw, "pitch": pitch, "roll": roll,
         "quality_score": quality_score,
-        "occlusion_class": occ_class
+        "occlusion_class": occ_class,
+        "occlusion_confidence": occ_confidence
     }
     result["processed_image_base64"] = encode_image_to_base64(final_img)
     result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
@@ -210,6 +231,8 @@ async def analyze_live(file: UploadFile = File(...)):
     occ_result = occlusion_processor.analyze(tight_crop)
     if occ_result['class'] == "occluded":
         hints.append("Что-то мешает для фотографии, уберите, пожалуйста")
+    elif occ_result['class'] == "headwear":
+        hints.append("Пожалуйста, снимите головной убор")
     elif occ_result['class'] == "clear_glasses":
         hints.append("Очки обнаружены: убедитесь, что нет бликов")
 

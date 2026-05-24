@@ -177,12 +177,12 @@ def check_photometry(image):
     brightness = gray.mean()
     
     # Свет
-    if brightness < 40: return False, "TOO_DARK"
-    if brightness > 250: return False, "TOO_BRIGHT"
+    if brightness < 20: return False, "TOO_DARK"
+    if brightness > 252: return False, "TOO_BRIGHT"
 
     # Резкость
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    if laplacian_var < 110: 
+    if laplacian_var < 10: 
         return False, "BLURRY"
     
     return True, "OK"
