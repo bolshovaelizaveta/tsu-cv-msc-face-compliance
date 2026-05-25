@@ -78,7 +78,7 @@ async def validate_photo(file: UploadFile = File(...)):
     
     if img is None:
         raise HTTPException(400, "Не удалось декодировать изображение")
-
+    
     result = {
         "filename": file.filename,
         "is_compliant": False,
@@ -87,26 +87,22 @@ async def validate_photo(file: UploadFile = File(...)):
         "latency_ms": 0,
         "processed_image_base64": None
     }
-    
-    # 0. Проверка минимального разрешения 
+
+    # Этап 0: Проверка разрешения фотографии (апскейл)
     h, w = img.shape[:2]
     min_side = min(h, w)
     max_side = max(h, w)
 
-    # Технический минимум 
     if min_side < 300:
-        result["errors"].append(f"Изображение слишком маленькое ({w}x{h}). Минимум 300px.")
+        result["errors"].append(f"Низкое разрешение: {w}x{h}. Минимум 300px.")
         result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
         return result
 
-    # 2. Апскейл до требований заказчика (640x480)
     if min_side < 480 or max_side < 640:
         scale_w = 640 / w
         scale_h = 480 / h
         scale = max(scale_w, scale_h)
-        
         img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LANCZOS4)
-        print(f"DEBUG: Выполнен адаптивный апскейл с {w}x{h} до {img.shape[1]}x{img.shape[0]}")
 
     # Этап 1: Фотометрия
     photo_ok, photo_msg = check_photometry(img)
@@ -132,14 +128,37 @@ async def validate_photo(file: UploadFile = File(...)):
         return result
 
     angles = geo_result["angles"]
-    ear, mar, landmarks = geo_result["ear"], geo_result["mar"], geo_result["landmarks"]
+    ear = geo_result["ear"]
+    mar = geo_result["mar"]
+    hand_detected = geo_result.get("hand_detected", False)
+    landmarks = geo_result["landmarks"]
+    
+    face_height = safe_float(geo_result.get("face_height", 0.5))
+    gaze_score = safe_float(geo_result.get("gaze_score", 1.0))
+    gaze_score_y = safe_float(geo_result.get("gaze_score_y", 1.2))
+
     yaw, pitch, roll = safe_float(angles['yaw']), safe_float(angles['pitch']), safe_float(angles['roll'])
 
     if abs(yaw) > ICAOThresholds.YAW_MAX: result["errors"].append(f"Поворот головы (Yaw): {yaw}°")
     if abs(pitch) > ICAOThresholds.PITCH_MAX: result["errors"].append(f"Наклон головы (Pitch): {pitch}°")
     if abs(roll) > ICAOThresholds.ROLL_MAX: result["errors"].append(f"Наклон к плечу (Roll): {roll}°")
+    
+    # Контроль расстояния до камеры
+    if face_height > ICAOThresholds.FACE_HEIGHT_MAX: result["errors"].append("Вы слишком близко к камере (должны быть видны плечи)")
+    if face_height < ICAOThresholds.FACE_HEIGHT_MIN: result["errors"].append("Вы слишком далеко от камеры")
+    
     if ear < ICAOThresholds.EYE_OPEN_MIN: result["errors"].append("Глаза закрыты")
     if mar > ICAOThresholds.MOUTH_CLOSED_MAX: result["errors"].append("Рот открыт")
+    
+    # Контроль направления взгляда
+    if gaze_score < ICAOThresholds.GAZE_MIN or gaze_score > ICAOThresholds.GAZE_MAX:
+        result["errors"].append("Взгляд отведен (Смотрите прямо в объектив)")
+    if gaze_score_y > ICAOThresholds.GAZE_Y_MAX:
+        result["errors"].append("Взгляд направлен вниз (Смотрите в объектив)")
+
+    # Проверка наличие рук в кадре
+    if hand_detected:
+        result["errors"].append("Уберите руку из кадра")
 
     if result["errors"]:
         result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
@@ -178,8 +197,7 @@ async def validate_photo(file: UploadFile = File(...)):
     result["metrics"] = {
         "yaw": yaw, "pitch": pitch, "roll": roll,
         "quality_score": quality_score,
-        "occlusion_class": occ_class,
-        "occlusion_confidence": occ_confidence
+        "occlusion_class": occ_class
     }
     result["processed_image_base64"] = encode_image_to_base64(final_img)
     result["latency_ms"] = int((time.perf_counter() - start_time) * 1000)
@@ -222,10 +240,16 @@ async def analyze_live(file: UploadFile = File(...)):
             hints.append("В кадре должен быть один человек")
     else:
         angles = geo_result["angles"]
+        
+        gaze_score = safe_float(geo_result.get("gaze_score", 1.0))
+        gaze_score_y = safe_float(geo_result.get("gaze_score_y", 1.2))
+        
         if abs(angles['yaw']) > ICAOThresholds.YAW_MAX: hints.append("Поверните голову прямо")
         if angles['pitch'] > ICAOThresholds.PITCH_MAX: hints.append("Опустите голову чуть ниже")
         if angles['pitch'] < -ICAOThresholds.PITCH_MAX: hints.append("Поднимите голову чуть выше")
         if geo_result['ear'] < ICAOThresholds.EYE_OPEN_MIN: hints.append("Не закрывайте глаза")
+        if gaze_score < ICAOThresholds.GAZE_MIN or gaze_score > ICAOThresholds.GAZE_MAX: hints.append("Смотрите прямо в камеру")
+        elif gaze_score_y > ICAOThresholds.GAZE_Y_MAX: hints.append("Не смотрите вниз, направьте взгляд в объектив")
 
     # 4. Окклюзии (YOLO-cls)
     occ_result = occlusion_processor.analyze(tight_crop)
