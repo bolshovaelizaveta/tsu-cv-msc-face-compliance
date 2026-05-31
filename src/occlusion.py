@@ -6,7 +6,7 @@ from ultralytics import YOLO
 class FaceOcclusionController:
     """
     Контроллер для проверки перекрытий лица (маски, очки).
-    Использует кастомно обученную модель YOLOv8m-cls.
+    Использует обученную модель YOLOv8m-cls.
     """
     def __init__(self, model_path="models/yolov8m-occlusion.pt"): 
         if not os.path.exists(model_path):

@@ -143,7 +143,7 @@
                     let htmlContent = `<strong>Добавление фотографии успешно</strong><br>
                                        • Качество: ${data.metrics.quality_score}<br>
                                        • Ракурс: Yaw ${data.metrics.yaw}°, Pitch ${data.metrics.pitch}°<br>
-                                       • Статус: Соответствует ICAO 9303<br>
+                                       • Статус: Соответствует<br>
                                        • Время обработки: ${data.latency_ms} мс<br>`;
                     
                     if (data.processed_image_base64) {
@@ -176,7 +176,7 @@
                 loader.style.display = 'none';
                 resultDiv.style.display = 'block';
                 resultDiv.className = "card error";
-                resultDiv.innerText = "Ошибка связи с сервером. Проверьте работу Docker-контейнера.";
+                resultDiv.innerText = "Ошибка связи с сервером.";
             }
         }
 

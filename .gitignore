@@ -54,6 +54,7 @@ dataset/
 datasets/
 images/
 videos/
+results/
 
 # Игнорируем веса моделей 
 models/
