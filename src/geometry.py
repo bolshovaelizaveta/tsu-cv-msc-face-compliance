@@ -93,53 +93,46 @@ class FaceGeometryController:
             elif pitch > 90: pitch = 180 - pitch
             yaw, roll = -yaw, -roll
 
-        # 2. Расчет открытости глаз (EAR)
+        # 2. Расчет открытости глаз (EAR) и рта (MAR)
         ear_l = self._calculate_ratio(landmarks, w, h, self.left_eye_indices)
         ear_r = self._calculate_ratio(landmarks, w, h, self.right_eye_indices)
         avg_ear = (ear_l + ear_r) / 2.0
-
-        # 3. Расчет закрытости рта (MAR)
         mar = self._calculate_ratio(landmarks, w, h, self.mouth_indices)
 
-        # 4. Расчет масштаба лица
+        # 3. Масштаб лица и метрики ICAO 
         face_height_pct = abs(landmarks.landmark[152].y - landmarks.landmark[10].y)
+        
+        # Точки 454 (правая скула) и 234 (левая скула)
+        face_width_pct = abs(landmarks.landmark[454].x - landmarks.landmark[234].x)
+        
+        # Точки 33 и 263 - уголки глаз. Считаем среднюю высоту Y. 
+        # (1.0 - y) дает расстояние от нижнего края изображения.
+        eye_y_avg = (landmarks.landmark[33].y + landmarks.landmark[263].y) / 2.0
+        eye_dist_from_bottom = 1.0 - eye_y_avg
 
-        # 5. Оценка направления взгляда
+        # 4. Оценка направления взгляда
         def get_gaze_ratio(eye_left_idx, eye_right_idx, iris_idx):
             eye_left = np.array([landmarks.landmark[eye_left_idx].x * w, landmarks.landmark[eye_left_idx].y * h])
             eye_right = np.array([landmarks.landmark[eye_right_idx].x * w, landmarks.landmark[eye_right_idx].y * h])
             iris = np.array([landmarks.landmark[iris_idx].x * w, landmarks.landmark[iris_idx].y * h])
-            
-            dist_left = np.linalg.norm(iris - eye_left)
-            dist_right = np.linalg.norm(iris - eye_right)
-            return dist_left / (dist_right + 1e-6)
+            return np.linalg.norm(iris - eye_left) / (np.linalg.norm(iris - eye_right) + 1e-6)
 
-        gaze_left = get_gaze_ratio(33, 133, 468)
-        gaze_right = get_gaze_ratio(362, 263, 473)
-        avg_gaze_x = (gaze_left + gaze_right) / 2.0
-
-        # Оценка взгляда по вертикали (Ось Y)
-        # Точки MediaPipe: 159 (верхнее веко левого), 145 (нижнее веко), 468 (зрачок)
+        gaze_score_x = (get_gaze_ratio(33, 133, 468) + get_gaze_ratio(362, 263, 473)) / 2.0
+        
         def get_vertical_gaze_ratio(upper_idx, lower_idx, iris_idx):
-            upper_y = landmarks.landmark[upper_idx].y
-            lower_y = landmarks.landmark[lower_idx].y
-            iris_y = landmarks.landmark[iris_idx].y
-            
-            dist_up = abs(iris_y - upper_y)
-            dist_down = abs(iris_y - lower_y)
-            return dist_up / (dist_down + 1e-6)
+            return abs(landmarks.landmark[iris_idx].y - landmarks.landmark[upper_idx].y) / (abs(landmarks.landmark[lower_idx].y - landmarks.landmark[upper_idx].y) + 1e-6)
 
-        v_gaze_left = get_vertical_gaze_ratio(159, 145, 468)
-        v_gaze_right = get_vertical_gaze_ratio(386, 374, 473)
-        avg_gaze_y = (v_gaze_left + v_gaze_right) / 2.0
+        gaze_score_y = (get_vertical_gaze_ratio(159, 145, 468) + get_vertical_gaze_ratio(386, 374, 473)) / 2.0
 
         return {
             "angles": {"yaw": yaw, "pitch": pitch, "roll": roll},
             "ear": avg_ear,
             "mar": mar,
             "face_height": face_height_pct,
-            "gaze_score": avg_gaze_x,
-            "gaze_score_y": avg_gaze_y, 
+            "face_width": face_width_pct,
+            "eye_dist_bottom": eye_dist_from_bottom,
+            "gaze_score": gaze_score_x,
+            "gaze_score_y": gaze_score_y, 
             "hand_detected": hand_detected, 
             "landmarks": landmarks
         }

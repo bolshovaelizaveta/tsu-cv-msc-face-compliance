@@ -4,12 +4,13 @@ import math
 import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import numpy as np 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
 
-# Импорты твоих модулей
+# Импорты модулей
 from src.config import ICAOThresholds
 from src.detector_v2 import FaceDetectorV2
 from src.geometry import FaceGeometryController
@@ -93,9 +94,11 @@ def draw_error_grid(error_list, output_path, title_prefix):
         
     cols = 4
     rows = math.ceil(len(error_list) / cols)
+    
     fig, axes = plt.subplots(rows, cols, figsize=(15, 4 * rows))
     
-    if len(error_list) > 1:
+    # ПРАВИЛЬНОЕ УПЛОЩЕНИЕ МАССИВА ГРАФИКОВ
+    if isinstance(axes, np.ndarray):
         axes = axes.flatten()
     else:
         axes = [axes]
@@ -104,15 +107,15 @@ def draw_error_grid(error_list, output_path, title_prefix):
         if i < len(error_list):
             item = error_list[i]
             img = cv2.imread(item['path'])
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            ax.imshow(img)
-            ax.set_title(f"{title_prefix}\n{item['reason']}", fontsize=10, color='red')
-            ax.axis('off')
-        else:
-            ax.axis('off')
+            if img is not None:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                ax.imshow(img)
+                ax.set_title(f"{title_prefix}\n{item['reason']}", fontsize=10, color='red')
+        ax.axis('off') 
             
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
 
 def calculate_system_metrics():
     validator = PipelineValidator()
